@@ -1,0 +1,222 @@
+---
+title: "EDA"
+author: "Guojing Wu"
+date: "11/26/2019"
+output:
+    pdf_document:
+    highlight: default
+    number_sections: true
+    citation_package:
+    keep_tex: false
+    fig_caption: true
+    latex_engine: pdflatex
+fontsize: 10pt
+geometry: margin=1in
+bibliography:
+biblio-style:
+header-includes:
+- \usepackage{indentfirst}
+- \usepackage{graphicx}
+- \usepackage{geometry}
+- \usepackage{subfigure}
+- \usepackage{amsmath}
+- \usepackage{listings}
+- \usepackage{tikz}
+- \usetikzlibrary{matrix}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, comment = "")
+library(tidyverse)
+library(jsonlite)  # read json file
+library(wordcloud)
+library(tidygraph)  # for network graph
+library(ggraph)
+```
+
+## Load data
+
+```{r}
+train <- fromJSON("train.json") %>% 
+  as_tibble()
+test <- fromJSON("test.json") %>% 
+  as_tibble()
+```
+
+## number of ingredients distribution
+
+```{r}
+helper <- function(x) length(unlist(x))
+
+jpeg("total_number_of_ingredients.jpg", units = "in", width = 5, height = 3, res = 300)
+train %>% 
+  mutate(total_ingredients = map_int(ingredients, helper)) %>% 
+  group_by(total_ingredients) %>% 
+  summarise(n = n()) %>% 
+  ggplot(aes(x = total_ingredients, y = n)) +
+  geom_bar(stat = "identity") + 
+  xlab("Total Number of Ingredients")
+dev.off()
+```
+
+## cuisine distribution
+
+```{r}
+jpeg("total_number_of_recipe.jpg", units = "in", width = 5, height = 3, res = 300)
+train %>% 
+  mutate(cuisine = factor(cuisine, 
+                          levels = names(sort(table(cuisine), decreasing = FALSE)))) %>% 
+  group_by(cuisine) %>% 
+  summarise(n = n()) %>% 
+  ggplot(aes(x = cuisine, y = n)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  geom_text(aes(label = n), color = "white", size = 3.5, hjust = 1.2) +
+  theme_minimal()
+dev.off()
+```
+
+## most common ingredients
+
+```{r}
+ingre = train %>% 
+  unnest(ingredients) %>% 
+  group_by(ingredients) %>% 
+  tally(sort = T)
+
+# we have 6714 unique ingredients
+```
+
+```{r}
+jpeg("top_15_ingredients.jpg", units = "in", width = 5, height = 3, res = 300)
+ingre[c(1:15),] %>% 
+  mutate(ingredients = factor(ingredients, 
+                              levels = ingre$ingredients[c(15:1)])) %>% 
+  ggplot(aes(x = ingredients, y = n)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  geom_text(aes(label = n), color = "white", size = 3.5, hjust = 1.2) +
+  theme_minimal()
+dev.off()
+```
+
+## difference between each cuisine
+
+```{r, dpi = 300}
+set.seed(100)
+
+jpeg("wordcloud.jpg", units = "in", width = 10, height = 6, res = 300)
+par(cex = 0.5, mai = c(0.1, 0.1, 0, 0))
+ 
+par(fig = c(0, 0.3, 0, 1))
+tmp = train %>% 
+  filter(cuisine == "chinese") %>% 
+  unnest(ingredients) %>% 
+  group_by(ingredients) %>% 
+  tally(sort = T)
+wordcloud(tmp$ingredients, tmp$n, min.freq = 1, max.words = 30,
+          random.order = FALSE, rot.per = 0.35, 
+          use.r.layout = FALSE, color = brewer.pal(8, "RdBu"))
+text(0.4, -0.2, labels = "Chinese", cex = 2)
+
+par(fig = c(0.33, 0.63, 0, 1), new = T)
+tmp = train %>% 
+  filter(cuisine == "indian") %>% 
+  unnest(ingredients) %>% 
+  group_by(ingredients) %>% 
+  tally(sort = T)
+wordcloud(tmp$ingredients, tmp$n, min.freq = 1, max.words = 30,
+          random.order = FALSE, rot.per = 0.35, 
+          use.r.layout = FALSE, color = brewer.pal(8, "RdBu"))
+text(0.48, -0.2, labels = "Indian", cex = 2)
+
+par(fig = c(0.66, 0.96, 0, 1), new = T)
+tmp = train %>% 
+  filter(cuisine == "southern_us") %>% 
+  unnest(ingredients) %>% 
+  group_by(ingredients) %>% 
+  tally(sort = T)
+wordcloud(tmp$ingredients, tmp$n, min.freq = 1, max.words = 30,
+          random.order = FALSE, rot.per = 0.35, 
+          use.r.layout = FALSE, color = brewer.pal(8, "RdBu"))
+text(0.56, -0.2, labels = "Southern U.S.", cex = 2)
+
+dev.off()
+```
+
+## undirected graph 
+
+```{r}
+# nodes
+nodes <- train %>% 
+  distinct(cuisine) %>% 
+  rename(label = cuisine) %>% 
+  rowid_to_column("id")
+```
+
+```{r}
+# edges
+## calculate overlap coefficient
+group.cui_ingre <- train %>%
+  unnest(ingredients) %>% 
+  group_by(cuisine, ingredients) %>% 
+  summarise(n = n())
+
+group.cui <- train %>% 
+  group_by(cuisine) %>% 
+  summarise(n = n())
+```
+
+```{r}
+set.seed(100)
+edges.source <- c()
+edges.target <- c()
+edges.coef <- c()
+
+for (i in 1:(length(group.cui$cuisine) - 1)) {
+  for (j in (i + 1):length(group.cui$cuisine)) {
+    edges.source <- append(edges.source, group.cui$cuisine[i])
+    list.source <- group.cui_ingre %>% 
+      filter(cuisine == group.cui$cuisine[i]) %>% 
+      mutate(prop = n / group.cui$n[i]) %>% 
+      filter(prop >= 0.1) %>% 
+      pull(ingredients)
+    
+    edges.target <- append(edges.target, group.cui$cuisine[j])
+    list.target <- group.cui_ingre %>% 
+      filter(cuisine == group.cui$cuisine[j]) %>% 
+      mutate(prop = n / group.cui$n[j]) %>% 
+      filter(prop >= 0.1) %>% 
+      pull(ingredients)
+    
+    edges.coef <- append(edges.coef, length(interaction(list.source, list.target)) / length(union(list.source, list.target)))
+  }
+}
+
+per_route <- tibble(source = edges.source,
+                target = edges.target,
+                coef = edges.coef)
+
+edges <- per_route %>% 
+  left_join(nodes, by = c("source" = "label")) %>% 
+  rename(from = id)
+
+edges <- edges %>% 
+  left_join(nodes, by = c("target" = "label")) %>% 
+  rename(to = id) %>% 
+  select(from, to, coef) %>% 
+  filter(coef >= 0.8)
+
+routes_tidy <- tbl_graph(nodes = nodes, edges = edges, directed = TRUE)
+
+jpeg("network.jpg", units = "in", width = 10, height = 6, res = 300)
+ggraph(routes_tidy, layout = "graphopt") + 
+  geom_node_point() +
+  geom_edge_link(aes(width = coef), alpha = 0.8) + 
+  scale_edge_width(range = c(0.2, 2)) +
+  geom_node_text(aes(label = label), repel = TRUE) +
+  labs(edge_width = "overlap coefficients") +
+  theme_graph()
+dev.off()
+```
+
