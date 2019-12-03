@@ -1,0 +1,45 @@
+---
+title: "Feature Extraction"
+author: "Guojing Wu"
+date: "12/3/2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, comment = "")
+library(tidyverse)
+library(jsonlite)  # read json file
+```
+
+## read and transfer
+
+```{r}
+helper <- function(x) {
+  for (i in 1:length(x)) {
+    x[i] = gsub(" ", "-", x[i])
+  }
+  return(paste(x, collapse = ", "))
+}
+
+train <- fromJSON("train.json") %>% 
+  as_tibble() %>% 
+  mutate(ingredients = map(ingredients, helper), 
+         ingredients = as.character(ingredients))
+
+test <- fromJSON("test.json") %>%
+  as_tibble() %>%
+  mutate(ingredients = map(ingredients, helper), 
+         ingredients = as.character(ingredients)) %>%
+  select(id, ingredients)
+
+table.cuisine <- tibble(cuisine = unique(train$cuisine),
+                        label = c(0:(length(cuisine) - 1)))
+train <- train %>% 
+  left_join(table.cuisine, by = c("cuisine" = "cuisine")) %>% 
+  select(cuisine, id, ingredients, label)
+
+writeLines(toJSON(train, dataframe = "row"), "training.json")
+writeLines(toJSON(test, dataframe = "row"), "testing.json")
+
+```
+

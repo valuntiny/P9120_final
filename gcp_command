@@ -1,0 +1,13 @@
+gcloud beta dataproc clusters create hw4-cluster \
+    --optional-components=ANACONDA,JUPYTER \
+    --image-version=1.4 \
+    --enable-component-gateway \
+    --bucket big_data_hw \
+    --project test-project-251000 \
+    --single-node \
+    --region us-east1 \
+    --metadata 'PIP_PACKAGES=graphframes==0.6 numpy pandas_gbq requests_oauthlib google-cloud-storage google-cloud-bigquery' \
+    --metadata gcs-connector-version=1.9.16 \
+    --metadata bigquery-connector-version=0.13.16 \
+    --initialization-actions gs://dataproc-initialization-actions/python/pip-install.sh,gs://dataproc-initialization-actions/connectors/connectors.sh \
+    --properties spark:spark.jars.packages=graphframes:graphframes:0.6.0-spark2.3-s_2.11
