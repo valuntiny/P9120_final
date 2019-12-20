@@ -5,6 +5,8 @@
 
 This is for modeling and predicting
 
+For exploratory part, please check <a href="https://github.com/valuntiny/P9120_final/blob/master/EDA.md"> EDA.md </a>
+
 
 ```python
 from pyspark.sql import SparkSession    
